@@ -1,0 +1,102 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+out/
+build/
+*.tsbuildinfo
+
+# Java/Gradle
+.gradle/
+java/build/
+java/.gradle/
+*.class
+*.jar
+!gradle-wrapper.jar
+hs_err_pid*
+
+# Electron
+*.asar
+release/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+.project
+.classpath
+.settings/
+bin/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Database
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# MinIO/Storage
+storage/
+minio-data/
+warehouse/
+
+# Config (user-specific)
+.data-chef/
+
+# Temporary
+temp/
+tmp/
+*.tmp
+*.bak
+*.swp
+*~
+
+# Docker volumes
+volumes/
+data/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Cache
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.vuepress/dist

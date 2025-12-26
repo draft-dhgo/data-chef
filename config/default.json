@@ -1,0 +1,30 @@
+{
+    "app": {
+        "name": "Data Chef",
+        "version": "1.0.0"
+    },
+    "minio": {
+        "endpoint": "localhost",
+        "port": 9000,
+        "useSSL": false,
+        "accessKey": "minioadmin",
+        "secretKey": "minioadmin",
+        "defaultBucket": "data-chef"
+    },
+    "spark": {
+        "pythonPath": "/usr/local/bin/python3.12",
+        "sparkHome": "",
+        "masterUrl": "local[*]",
+        "driverMemory": "2g",
+        "executorMemory": "2g",
+        "javaHome": "/opt/homebrew/opt/openjdk@17"
+    },
+    "iceberg": {
+        "warehouse": "s3a://data-chef/warehouse",
+        "catalog": "iceberg_catalog"
+    },
+    "ui": {
+        "theme": "dark",
+        "language": "ko"
+    }
+}

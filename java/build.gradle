@@ -1,0 +1,60 @@
+plugins {
+    id 'java'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+group = 'com.datachef'
+version = '1.0'
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+dependencies {
+    // Spark Core & SQL
+    implementation 'org.apache.spark:spark-core_2.12:3.5.0'
+    implementation 'org.apache.spark:spark-sql_2.12:3.5.0'
+    
+    // Hadoop AWS for S3A support
+    implementation 'org.apache.hadoop:hadoop-aws:3.3.4'
+    implementation 'com.amazonaws:aws-java-sdk-bundle:1.12.262'
+    
+    // Apache Iceberg
+    implementation 'org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.3'
+    
+    // JSON parsing
+    implementation 'com.google.code.gson:gson:2.10.1'
+    
+    // SLF4J (Logging)
+    implementation 'org.slf4j:slf4j-simple:2.0.9'
+}
+
+shadowJar {
+    archiveBaseName = 'data-chef-spark'
+    archiveVersion = '1.0'
+    archiveClassifier = ''
+    manifest {
+        attributes 'Main-Class': 'com.datachef.DataChefJob'
+    }
+    
+    // Enable ZIP64 for large archives
+    zip64 = true
+    
+    // Merge service files
+    mergeServiceFiles()
+    
+    // Exclude signatures
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
