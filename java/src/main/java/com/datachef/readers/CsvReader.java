@@ -12,7 +12,7 @@ import org.apache.spark.sql.SparkSession;
 public class CsvReader implements DataReader {
     @Override
     public Dataset<Row> read(SparkSession spark, String sourcePath, PipeConfig.Pipe pipe) throws Exception {
-        String pattern = buildGlobPattern(sourcePath, pipe.filePattern.extensions);
+        String pattern = buildGlobPattern(sourcePath, pipe.filePattern.extension);
         Logger.info("Reading CSV files from pattern: " + pattern);
 
         PipeConfig.RecordBoundary boundary = pipe.recordBoundary;

@@ -24,16 +24,27 @@ public class PipeConfig {
     }
 
     public static class FilePattern {
-        public List<String> extensions;
-        public String prefix;
-        public String suffix;
+        public String extension;
     }
 
     public static class RecordBoundary {
-        public String type;        // "json", "delimited", "parquet"
+        public String type;        // "json", "delimited", "parquet", "text"
         public String encoding;
         public String delimiter;
         public Boolean hasHeader;
+        public FieldExtraction fieldExtraction;
+    }
+
+    public static class FieldExtraction {
+        public String method;      // "regex", "delimiter", "fixed"
+        public List<RegexField> fields;
+        public String onError;     // "skip", "null", "fail"
+    }
+
+    public static class RegexField {
+        public String name;
+        public String pattern;
+        public Integer group;
     }
 
     public static class Schema {

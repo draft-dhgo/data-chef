@@ -17,6 +17,8 @@ public class ReaderFactory {
                 return new CsvReader();
             case "parquet":
                 return new ParquetReader();
+            case "text":
+                return new TextReader();
             default:
                 throw new IllegalArgumentException("Unsupported file type: " + fileType);
         }

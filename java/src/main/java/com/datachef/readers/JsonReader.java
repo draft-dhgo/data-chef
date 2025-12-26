@@ -12,7 +12,7 @@ import org.apache.spark.sql.SparkSession;
 public class JsonReader implements DataReader {
     @Override
     public Dataset<Row> read(SparkSession spark, String sourcePath, PipeConfig.Pipe pipe) throws Exception {
-        String pattern = buildGlobPattern(sourcePath, pipe.filePattern.extensions);
+        String pattern = buildGlobPattern(sourcePath, pipe.filePattern.extension);
         Logger.info("Reading JSON files from pattern: " + pattern);
 
         String encoding = pipe.recordBoundary.encoding != null ? 

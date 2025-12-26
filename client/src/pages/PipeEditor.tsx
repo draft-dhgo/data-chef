@@ -10,9 +10,7 @@ interface Pipe {
     description: string;
     storagePath: string;
     filePattern: {
-        extensions: string[];
-        prefix?: string;
-        suffix?: string;
+        extension: string;
     };
     recordBoundary: {
         type: 'delimited' | 'json' | 'jsonl' | 'text' | 'parquet';
@@ -21,9 +19,12 @@ interface Pipe {
         encoding?: string;
         fieldExtraction?: {
             method: 'regex' | 'delimiter';
-            pattern?: string;
+            fields?: Array<{
+                name: string;
+                pattern: string;
+                group: number;
+            }>;
             fieldDelimiter?: string;
-            fieldNames: string[];
         };
     };
     schema: {
@@ -60,9 +61,7 @@ export default function PipeEditor() {
         description: '',
         storagePath: '',
         filePattern: {
-            extensions: [],
-            prefix: '',
-            suffix: ''
+            extension: ''
         },
         recordBoundary: {
             type: 'json',
@@ -86,8 +85,6 @@ export default function PipeEditor() {
         }
     });
 
-    const [extensionInput, setExtensionInput] = useState('');
-    const [fieldNameInput, setFieldNameInput] = useState('');
 
     useEffect(() => {
         if (id) {
@@ -120,8 +117,8 @@ export default function PipeEditor() {
             alert('스토리지 경로는 /로 시작해야 합니다.');
             return;
         }
-        if (pipe.filePattern.extensions.length === 0) {
-            alert('파일 확장자를 하나 이상 추가하세요.');
+        if (!pipe.filePattern.extension.trim()) {
+            alert('파일 확장자를 입력하세요.');
             return;
         }
         if (!pipe.output.tableName.trim()) {
@@ -143,64 +140,6 @@ export default function PipeEditor() {
         } finally {
             setSaving(false);
         }
-    }
-
-    function addExtension() {
-        if (extensionInput.trim() && !pipe.filePattern.extensions.includes(extensionInput.trim())) {
-            setPipe({
-                ...pipe,
-                filePattern: {
-                    ...pipe.filePattern,
-                    extensions: [...pipe.filePattern.extensions, extensionInput.trim()]
-                }
-            });
-            setExtensionInput('');
-        }
-    }
-
-    function removeExtension(ext: string) {
-        setPipe({
-            ...pipe,
-            filePattern: {
-                ...pipe.filePattern,
-                extensions: pipe.filePattern.extensions.filter(e => e !== ext)
-            }
-        });
-    }
-
-    function addFieldName() {
-        if (fieldNameInput.trim()) {
-            const currentFieldNames = pipe.recordBoundary.fieldExtraction?.fieldNames || [];
-            if (!currentFieldNames.includes(fieldNameInput.trim())) {
-                setPipe({
-                    ...pipe,
-                    recordBoundary: {
-                        ...pipe.recordBoundary,
-                        fieldExtraction: {
-                            ...pipe.recordBoundary.fieldExtraction,
-                            method: pipe.recordBoundary.fieldExtraction?.method || 'regex',
-                            pattern: pipe.recordBoundary.fieldExtraction?.pattern || '',
-                            fieldNames: [...currentFieldNames, fieldNameInput.trim()]
-                        } as any
-                    }
-                });
-                setFieldNameInput('');
-            }
-        }
-    }
-
-    function removeFieldName(name: string) {
-        if (!pipe.recordBoundary.fieldExtraction) return;
-        setPipe({
-            ...pipe,
-            recordBoundary: {
-                ...pipe.recordBoundary,
-                fieldExtraction: {
-                    ...pipe.recordBoundary.fieldExtraction,
-                    fieldNames: pipe.recordBoundary.fieldExtraction.fieldNames.filter(f => f !== name)
-                }
-            }
-        });
     }
 
     function addSchemaColumn() {
@@ -330,50 +269,21 @@ export default function PipeEditor() {
                     <h2>파일 패턴</h2>
                     <div className="form-group">
                         <label>파일 확장자</label>
-                        <div className="tag-input">
-                            <div className="tags">
-                                {pipe.filePattern.extensions.map(ext => (
-                                    <span key={ext} className="tag">
-                                        .{ext}
-                                        <button onClick={() => removeExtension(ext)}>×</button>
-                                    </span>
-                                ))}
-                            </div>
-                            <input
-                                type="text"
-                                value={extensionInput}
-                                onChange={(e) => setExtensionInput(e.target.value)}
-                                onKeyPress={(e) => e.key === 'Enter' && addExtension()}
-                                placeholder="확장자 입력 (예: json, log)"
-                            />
-                            <button onClick={addExtension}>추가</button>
-                        </div>
-                    </div>
-                    <div className="form-row">
-                        <div className="form-group">
-                            <label>파일명 접두사 (선택)</label>
-                            <input
-                                type="text"
-                                value={pipe.filePattern.prefix || ''}
-                                onChange={(e) => setPipe({
-                                    ...pipe,
-                                    filePattern: { ...pipe.filePattern, prefix: e.target.value }
-                                })}
-                                placeholder="예: log_"
-                            />
-                        </div>
-                        <div className="form-group">
-                            <label>파일명 접미사 (선택)</label>
-                            <input
-                                type="text"
-                                value={pipe.filePattern.suffix || ''}
-                                onChange={(e) => setPipe({
-                                    ...pipe,
-                                    filePattern: { ...pipe.filePattern, suffix: e.target.value }
-                                })}
-                                placeholder="예: _2024"
-                            />
-                        </div>
+                        <select
+                            value={pipe.filePattern.extension}
+                            onChange={(e) => setPipe({
+                                ...pipe,
+                                filePattern: { extension: e.target.value }
+                            })}
+                        >
+                            <option value="">선택하세요</option>
+                            <option value="json">json - JSON 파일</option>
+                            <option value="csv">csv - CSV 파일</option>
+                            <option value="tsv">tsv - TSV 파일</option>
+                            <option value="parquet">parquet - Parquet 파일</option>
+                            <option value="log">log - 로그 파일</option>
+                            <option value="txt">txt - 텍스트 파일</option>
+                        </select>
                     </div>
                 </section>
 
@@ -432,88 +342,125 @@ export default function PipeEditor() {
                     {pipe.recordBoundary.type === 'text' && (
                         <>
                             <div className="form-group">
-                                <label>필드 추출 방법</label>
-                                <select
-                                    value={pipe.recordBoundary.fieldExtraction?.method || 'regex'}
-                                    onChange={(e) => setPipe({
-                                        ...pipe,
-                                        recordBoundary: {
-                                            ...pipe.recordBoundary,
-                                            fieldExtraction: {
-                                                ...pipe.recordBoundary.fieldExtraction,
-                                                method: e.target.value as any,
-                                                fieldNames: pipe.recordBoundary.fieldExtraction?.fieldNames || []
-                                            } as any
-                                        }
-                                    })}
-                                >
-                                    <option value="regex">정규표현식 (Regex)</option>
-                                    <option value="delimiter">구분자</option>
-                                </select>
-                            </div>
-
-                            {pipe.recordBoundary.fieldExtraction?.method === 'regex' && (
-                                <div className="form-group">
-                                    <label>정규표현식 패턴</label>
-                                    <input
-                                        type="text"
-                                        value={pipe.recordBoundary.fieldExtraction?.pattern || ''}
-                                        onChange={(e) => setPipe({
-                                            ...pipe,
-                                            recordBoundary: {
-                                                ...pipe.recordBoundary,
-                                                fieldExtraction: {
-                                                    ...pipe.recordBoundary.fieldExtraction!,
-                                                    pattern: e.target.value
+                                <label>
+                                    정규표현식 필드 추출
+                                    <small style={{display: 'block', marginTop: '4px', fontWeight: 'normal'}}>
+                                        각 필드마다 개별 패턴을 지정하세요
+                                    </small>
+                                </label>
+                                <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+                                    {(pipe.recordBoundary.fieldExtraction?.fields || []).map((field, idx) => (
+                                        <div key={idx} style={{display: 'grid', gridTemplateColumns: '150px 1fr 70px 40px', gap: '8px', alignItems: 'start', padding: '12px', border: '1px solid #e0e0e0', borderRadius: '4px', backgroundColor: '#f9f9f9'}}>
+                                            <div>
+                                                <input
+                                                    type="text"
+                                                    placeholder="필드명"
+                                                    value={field.name}
+                                                    onChange={(e) => {
+                                                        const newFields = [...(pipe.recordBoundary.fieldExtraction?.fields || [])];
+                                                        newFields[idx] = { ...newFields[idx], name: e.target.value };
+                                                        setPipe({
+                                                            ...pipe,
+                                                            recordBoundary: {
+                                                                ...pipe.recordBoundary,
+                                                                fieldExtraction: {
+                                                                    method: 'regex',
+                                                                    fields: newFields
+                                                                }
+                                                            }
+                                                        });
+                                                    }}
+                                                    style={{width: '100%', padding: '8px'}}
+                                                />
+                                                <small style={{fontSize: '11px', color: '#666'}}>예: timestamp</small>
+                                            </div>
+                                            <div>
+                                                <input
+                                                    type="text"
+                                                    placeholder="정규표현식"
+                                                    value={field.pattern}
+                                                    onChange={(e) => {
+                                                        const newFields = [...(pipe.recordBoundary.fieldExtraction?.fields || [])];
+                                                        newFields[idx] = { ...newFields[idx], pattern: e.target.value };
+                                                        setPipe({
+                                                            ...pipe,
+                                                            recordBoundary: {
+                                                                ...pipe.recordBoundary,
+                                                                fieldExtraction: {
+                                                                    method: 'regex',
+                                                                    fields: newFields
+                                                                }
+                                                            }
+                                                        });
+                                                    }}
+                                                    style={{width: '100%', padding: '8px'}}
+                                                />
+                                                <small style={{fontSize: '11px', color: '#666'}}>예: ^(\d{'{'}4{'}'}-\d{'{'}2{'}'}-\d{'{'}2{'}'})</small>
+                                            </div>
+                                            <div>
+                                                <input
+                                                    type="number"
+                                                    placeholder="그룹"
+                                                    value={field.group}
+                                                    onChange={(e) => {
+                                                        const newFields = [...(pipe.recordBoundary.fieldExtraction?.fields || [])];
+                                                        newFields[idx] = { ...newFields[idx], group: parseInt(e.target.value) || 1 };
+                                                        setPipe({
+                                                            ...pipe,
+                                                            recordBoundary: {
+                                                                ...pipe.recordBoundary,
+                                                                fieldExtraction: {
+                                                                    method: 'regex',
+                                                                    fields: newFields
+                                                                }
+                                                            }
+                                                        });
+                                                    }}
+                                                    min="1"
+                                                    style={{width: '100%', padding: '8px'}}
+                                                />
+                                                <small style={{fontSize: '11px', color: '#666'}}>캡처 그룹</small>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    const newFields = (pipe.recordBoundary.fieldExtraction?.fields || []).filter((_, i) => i !== idx);
+                                                    setPipe({
+                                                        ...pipe,
+                                                        recordBoundary: {
+                                                            ...pipe.recordBoundary,
+                                                            fieldExtraction: {
+                                                                method: 'regex',
+                                                                fields: newFields
+                                                            }
+                                                        }
+                                                    });
+                                                }}
+                                                style={{padding: '8px', cursor: 'pointer', backgroundColor: '#ff4444', color: 'white', border: 'none', borderRadius: '4px'}}
+                                                title="삭제"
+                                            >
+                                                ×
+                                            </button>
+                                        </div>
+                                    ))}
+                                    <button
+                                        onClick={() => {
+                                            const newFields = [...(pipe.recordBoundary.fieldExtraction?.fields || []), { name: '', pattern: '', group: 1 }];
+                                            setPipe({
+                                                ...pipe,
+                                                recordBoundary: {
+                                                    ...pipe.recordBoundary,
+                                                    fieldExtraction: {
+                                                        method: 'regex',
+                                                        fields: newFields
+                                                    }
                                                 }
-                                            }
-                                        })}
-                                        placeholder="예: (\d{4}-\d{2}-\d{2}) \[(\w+)\] (.*)"
-                                    />
-                                    <small>캡처 그룹 ()을 사용하여 필드를 추출합니다</small>
-                                </div>
-                            )}
-
-                            {pipe.recordBoundary.fieldExtraction?.method === 'delimiter' && (
-                                <div className="form-group">
-                                    <label>필드 구분자</label>
-                                    <input
-                                        type="text"
-                                        value={pipe.recordBoundary.fieldExtraction?.fieldDelimiter || '|'}
-                                        onChange={(e) => setPipe({
-                                            ...pipe,
-                                            recordBoundary: {
-                                                ...pipe.recordBoundary,
-                                                fieldExtraction: {
-                                                    ...pipe.recordBoundary.fieldExtraction!,
-                                                    fieldDelimiter: e.target.value
-                                                }
-                                            }
-                                        })}
-                                        placeholder="|"
-                                    />
-                                </div>
-                            )}
-
-                            <div className="form-group">
-                                <label>필드 이름 (순서대로)</label>
-                                <div className="tag-input">
-                                    <div className="tags">
-                                        {(pipe.recordBoundary.fieldExtraction?.fieldNames || []).map(name => (
-                                            <span key={name} className="tag">
-                                                {name}
-                                                <button onClick={() => removeFieldName(name)}>×</button>
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <input
-                                        type="text"
-                                        value={fieldNameInput}
-                                        onChange={(e) => setFieldNameInput(e.target.value)}
-                                        onKeyPress={(e) => e.key === 'Enter' && addFieldName()}
-                                        placeholder="필드 이름 입력"
-                                    />
-                                    <button onClick={addFieldName}>추가</button>
+                                            });
+                                        }}
+                                        type="button"
+                                        style={{padding: '10px 16px', cursor: 'pointer', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px'}}
+                                    >
+                                        + 필드 추가
+                                    </button>
                                 </div>
                             </div>
                         </>

@@ -21,12 +21,7 @@ export interface Pipe {
 }
 
 export interface FilePattern {
-    extensions: string[];      // ['csv', 'json', 'parquet']
-    prefix?: string;           // 'log_'
-    suffix?: string;           // '_2024'
-    regex?: string;            // 고급 정규표현식 패턴
-    minSize?: number;          // 최소 파일 크기 (bytes)
-    maxSize?: number;          // 최대 파일 크기 (bytes)
+    extension: string;         // 'csv', 'json', 'parquet', 'log'
 }
 
 export interface RecordBoundary {
@@ -47,26 +42,31 @@ export interface RecordBoundary {
 export interface FieldExtraction {
     method: 'regex' | 'delimiter' | 'fixed' | 'json_path' | 'split';
 
-    // regex 방식: 정규표현식 캡처 그룹으로 필드 추출
-    pattern?: string;          // '(\d{4}-\d{2}-\d{2}) (\w+) \[(\w+)\] (.*)'
+    // regex 방식: 필드별로 개별 정규표현식 패턴 적용
+    fields?: RegexField[];     // [{ name: 'timestamp', pattern: '^(\d{4}-\d{2}-\d{2})', group: 1 }, ...]
 
     // delimiter 방식: 구분자로 필드 분리
     fieldDelimiter?: string;   // '|' 또는 '\t'
+    fieldNames?: string[];     // delimiter 방식에서 사용할 필드명
 
     // fixed 방식: 고정 폭으로 필드 추출
     fixedWidths?: number[];    // [10, 5, 20, 50] - 각 필드의 문자 수
+    fixedFieldNames?: string[];
 
     // split 방식: 여러 개의 구분자로 단계적 분리
     splitSteps?: SplitStep[];
-
-    // 추출될 필드 이름 목록 (순서대로)
-    fieldNames: string[];
 
     // 추출 실패 시 처리
     onError?: 'skip' | 'null' | 'fail';
 
     // 필드별 후처리 (trim, 타입 변환 등)
     fieldProcessing?: FieldProcessing[];
+}
+
+export interface RegexField {
+    name: string;              // 필드명
+    pattern: string;           // 정규표현식 패턴 (캡처 그룹 포함)
+    group: number;             // 추출할 캡처 그룹 번호 (1부터 시작)
 }
 
 // 단계적 분리 설정

@@ -12,7 +12,7 @@ import org.apache.spark.sql.SparkSession;
 public class ParquetReader implements DataReader {
     @Override
     public Dataset<Row> read(SparkSession spark, String sourcePath, PipeConfig.Pipe pipe) throws Exception {
-        String pattern = buildGlobPattern(sourcePath, pipe.filePattern.extensions);
+        String pattern = buildGlobPattern(sourcePath, pipe.filePattern.extension);
         Logger.info("Reading Parquet files from pattern: " + pattern);
 
         Dataset<Row> df = spark.read().parquet(pattern);

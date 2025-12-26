@@ -22,6 +22,7 @@ public class DataChefJob {
             // Check for action parameter (for table queries)
             String action = null;
             String tableName = null;
+            String sqlQuery = null;
             int limit = 10;
             
             for (int i = 0; i < args.length; i++) {
@@ -29,6 +30,8 @@ public class DataChefJob {
                     action = args[i + 1];
                 } else if ("--table".equals(args[i]) && i + 1 < args.length) {
                     tableName = args[i + 1];
+                } else if ("--sql".equals(args[i]) && i + 1 < args.length) {
+                    sqlQuery = args[i + 1];
                 } else if ("--limit".equals(args[i]) && i + 1 < args.length) {
                     limit = Integer.parseInt(args[i + 1]);
                 }
@@ -36,7 +39,7 @@ public class DataChefJob {
             
             // Handle table query actions
             if (action != null) {
-                handleQueryAction(action, tableName, limit, args);
+                handleQueryAction(action, tableName, sqlQuery, limit, args);
                 return;
             }
             
@@ -96,9 +99,9 @@ public class DataChefJob {
     }
     
     /**
-     * Handle table query actions (list, preview)
+     * Handle table query actions (list, preview, query)
      */
-    private static void handleQueryAction(String action, String tableName, int limit, String[] args) {
+    private static void handleQueryAction(String action, String tableName, String sqlQuery, int limit, String[] args) {
         SparkSession spark = null;
         
         try {
@@ -172,6 +175,48 @@ public class DataChefJob {
                 
                 org.apache.spark.sql.Dataset<org.apache.spark.sql.Row> df = 
                     spark.read().table(fullTableName).limit(limit);
+                
+                // Get schema
+                com.google.gson.JsonArray schemaArray = new com.google.gson.JsonArray();
+                for (org.apache.spark.sql.types.StructField field : df.schema().fields()) {
+                    com.google.gson.JsonObject fieldObj = new com.google.gson.JsonObject();
+                    fieldObj.addProperty("name", field.name());
+                    fieldObj.addProperty("type", field.dataType().simpleString());
+                    schemaArray.add(fieldObj);
+                }
+                
+                // Get rows
+                com.google.gson.JsonArray rowsArray = new com.google.gson.JsonArray();
+                df.collectAsList().forEach(row -> {
+                    com.google.gson.JsonObject rowObj = new com.google.gson.JsonObject();
+                    for (int i = 0; i < row.size(); i++) {
+                        Object value = row.get(i);
+                        String fieldName = df.schema().fields()[i].name();
+                        if (value == null) {
+                            rowObj.add(fieldName, com.google.gson.JsonNull.INSTANCE);
+                        } else {
+                            rowObj.addProperty(fieldName, value.toString());
+                        }
+                    }
+                    rowsArray.add(rowObj);
+                });
+                
+                // Output JSON
+                com.google.gson.JsonObject result = new com.google.gson.JsonObject();
+                result.add("schema", schemaArray);
+                result.add("rows", rowsArray);
+                result.addProperty("rowCount", rowsArray.size());
+                
+                System.out.println(new com.google.gson.Gson().toJson(result));
+                spark.stop();
+                System.exit(0);
+                
+            } else if ("query".equals(action) && sqlQuery != null) {
+                // Execute arbitrary SQL query
+                Logger.info("Executing SQL query: " + sqlQuery);
+                
+                org.apache.spark.sql.Dataset<org.apache.spark.sql.Row> df = 
+                    spark.sql(sqlQuery).limit(limit);
                 
                 // Get schema
                 com.google.gson.JsonArray schemaArray = new com.google.gson.JsonArray();

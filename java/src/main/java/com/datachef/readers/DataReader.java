@@ -22,18 +22,11 @@ public interface DataReader {
     /**
      * Build glob pattern for file filtering
      */
-    default String buildGlobPattern(String basePath, java.util.List<String> extensions) {
-        if (extensions == null || extensions.isEmpty()) {
+    default String buildGlobPattern(String basePath, String extension) {
+        if (extension == null || extension.isEmpty()) {
             return basePath + "/*";
         }
-
-        if (extensions.size() == 1) {
-            return basePath + "/*." + extensions.get(0);
-        }
-
-        // Multiple extensions: path/*.{json,csv,txt}
-        String extensionsStr = String.join(",", extensions);
-        return basePath + "/*.{" + extensionsStr + "}";
+        return basePath + "/*." + extension;
     }
 }
 

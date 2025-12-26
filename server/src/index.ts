@@ -32,10 +32,12 @@ function createMcpServer(): McpServer {
         { capabilities: { logging: {}, tools: {} } }
     );
 
+    // @ts-ignore - MCP SDK type inference issue
     server.tool('list_pipes', 'List all pipes', {}, async () => ({
         content: [{ type: 'text', text: JSON.stringify(pipeManager.listPipes(), null, 2) }]
     }));
 
+    // @ts-ignore - MCP SDK type inference issue
     server.tool('get_pipe', 'Get pipe by ID', { pipeId: z.string() }, async ({ pipeId }) => {
         const pipe = pipeManager.getPipe(pipeId);
         return {
@@ -43,69 +45,85 @@ function createMcpServer(): McpServer {
         };
     });
 
-    server.tool('create_pipe', 'Create a new pipe with full configuration', {
-        name: z.string().describe('Pipe name'),
-        description: z.string().optional().describe('Pipe description'),
-        storagePath: z.string().describe('MinIO storage folder path (e.g. /data/logs)'),
-        fileExtensions: z.array(z.string()).describe('File extensions (e.g. ["json", "log"])'),
-        filePrefix: z.string().optional().describe('File name prefix filter'),
-        fileSuffix: z.string().optional().describe('File name suffix filter (before extension)'),
-        recordType: z.enum(['delimited', 'json', 'jsonl', 'text', 'parquet']).describe('File format type'),
-        delimiter: z.string().optional().describe('Field delimiter for CSV files'),
-        hasHeader: z.boolean().optional().describe('CSV has header row'),
-        regexPattern: z.string().optional().describe('Regex pattern for text file parsing'),
-        regexFieldNames: z.array(z.string()).optional().describe('Field names for regex capture groups'),
-        tableName: z.string().describe('Output Iceberg table name'),
-        namespace: z.string().default('default').describe('Iceberg namespace'),
-        writeMode: z.enum(['append', 'overwrite']).default('overwrite').describe('Write mode: overwrite recreates table on each run')
-    }, async (args) => {
-        try {
-            const recordBoundary: any = {
-                type: args.recordType,
-                encoding: 'utf-8'
-            };
+    // @ts-ignore - MCP SDK type inference issue
+    server.tool('create_pipe', 'Create a new pipe with JSON configuration', {
+        config: z.string().describe(`JSON configuration for the pipe.
 
-            if (args.recordType === 'delimited') {
-                recordBoundary.delimiter = args.delimiter || ',';
-                recordBoundary.hasHeader = args.hasHeader ?? true;
-            } else if (args.recordType === 'text' && args.regexPattern && args.regexFieldNames) {
-                recordBoundary.fieldExtraction = {
-                    method: 'regex',
-                    pattern: args.regexPattern,
-                    fieldNames: args.regexFieldNames
+Required fields:
+- name: string (pipe name)
+- storagePath: string (MinIO folder path, e.g. "/data/logs")
+- fileExtension: string (e.g. "csv", "json", "log", "parquet")
+- recordType: "delimited" | "json" | "jsonl" | "text" | "parquet"
+- tableName: string (output Iceberg table name)
+
+Optional fields:
+- description: string
+- delimiter: string (for delimited type, default ",")
+- hasHeader: boolean (for delimited type, default true)
+- namespace: string (Iceberg namespace, default "default")
+- writeMode: "append" | "overwrite" (default "overwrite")
+- regexFields: array of {name, pattern, group} (for text type with regex extraction)
+
+Examples:
+
+CSV file:
+{"name":"csv-pipe","storagePath":"/data/sales","fileExtension":"csv","recordType":"delimited","tableName":"sales_data","delimiter":",","hasHeader":true}
+
+JSON file:
+{"name":"json-pipe","storagePath":"/data/events","fileExtension":"json","recordType":"json","tableName":"events"}
+
+Log file with regex:
+{"name":"log-pipe","storagePath":"/data/logs","fileExtension":"log","recordType":"text","tableName":"app_logs","regexFields":[{"name":"timestamp","pattern":"^(\\\\d{4}-\\\\d{2}-\\\\d{2} \\\\d{2}:\\\\d{2}:\\\\d{2})","group":1},{"name":"level","pattern":"\\\\[(\\\\w+)\\\\]","group":1}]}`)
+    },
+        // @ts-ignore - MCP SDK type inference issue
+        async (args: { config: string }) => {
+            try {
+                const parsed = JSON.parse(args.config);
+
+                const recordBoundary: any = {
+                    type: parsed.recordType,
+                    encoding: 'utf-8'
+                };
+
+                if (parsed.recordType === 'delimited') {
+                    recordBoundary.delimiter = parsed.delimiter || ',';
+                    recordBoundary.hasHeader = parsed.hasHeader ?? true;
+                } else if (parsed.recordType === 'text' && parsed.regexFields && parsed.regexFields.length > 0) {
+                    recordBoundary.fieldExtraction = {
+                        method: 'regex',
+                        fields: parsed.regexFields
+                    };
+                }
+
+                const newPipe = await pipeManager.createPipe({
+                    name: parsed.name,
+                    description: parsed.description,
+                    storagePath: parsed.storagePath,
+                    filePattern: {
+                        extension: parsed.fileExtension
+                    },
+                    recordBoundary,
+                    schema: { inferFromData: true, columns: [] },
+                    partitioning: { enabled: false, keys: [] },
+                    output: {
+                        tableName: parsed.tableName,
+                        catalog: 'iceberg_catalog',
+                        namespace: parsed.namespace || 'default',
+                        writeMode: parsed.writeMode || 'overwrite'
+                    }
+                });
+                return { content: [{ type: 'text', text: `✓ Pipe created successfully:\n${JSON.stringify(newPipe, null, 2)}` }] };
+            } catch (error) {
+                return {
+                    isError: true,
+                    content: [{ type: 'text', text: `✗ Failed to create pipe: ${error}` }]
                 };
             }
+        });
 
-            const newPipe = await pipeManager.createPipe({
-                name: args.name,
-                description: args.description,
-                storagePath: args.storagePath,
-                filePattern: {
-                    extensions: args.fileExtensions,
-                    prefix: args.filePrefix,
-                    suffix: args.fileSuffix
-                },
-                recordBoundary,
-                schema: { inferFromData: true, columns: [] },
-                partitioning: { enabled: false, keys: [] },
-                output: {
-                    tableName: args.tableName,
-                    catalog: 'iceberg_catalog',
-                    namespace: args.namespace,
-                    writeMode: args.writeMode
-                }
-            });
-            return { content: [{ type: 'text', text: `✓ Pipe created successfully:\n${JSON.stringify(newPipe, null, 2)}` }] };
-        } catch (error) {
-            return {
-                isError: true,
-                content: [{ type: 'text', text: `✗ Failed to create pipe: ${error}` }]
-            };
-        }
-    });
-
-    server.tool('delete_pipe', 'Delete a pipe and its storage folder', {
-        pipeId: z.string().describe('Pipe ID to delete')
+    // @ts-ignore - MCP SDK type inference issue
+    server.tool('delete_pipe', 'Delete a pipe and its MinIO storage folder', {
+        pipeId: z.string().describe('Pipe ID to delete. Use list_pipes to get available pipe IDs.')
     }, async ({ pipeId }) => {
         try {
             const deleted = await pipeManager.deletePipe(pipeId);
@@ -125,6 +143,7 @@ function createMcpServer(): McpServer {
         }
     });
 
+    // @ts-ignore - MCP SDK type inference issue
     server.tool('list_tables', 'List all Iceberg tables', {}, async () => {
         try {
             const tables = await icebergQuery.listIcebergTables();
@@ -139,10 +158,12 @@ function createMcpServer(): McpServer {
         }
     });
 
-    server.tool('preview_table', 'Preview data from an Iceberg table', {
-        tableName: z.string().describe('Table name to preview'),
-        limit: z.number().optional().default(10).describe('Number of rows to preview (default: 10)')
-    }, async ({ tableName, limit }) => {
+    // @ts-ignore - MCP SDK type inference issue
+    server.tool('show_table_data', 'Show sample data from an Iceberg table. Use this to preview table contents, not for complex queries.', {
+        tableName: z.string().describe('Iceberg table name (without namespace). Use list_tables to get available tables.'),
+        limit: z.number().optional().default(10).describe('Number of rows to show (1-1000, default: 10)')
+    }, async (args: { tableName: string; limit: number }) => {
+        const { tableName, limit } = args;
         try {
             const preview = await icebergQuery.previewTable(tableName, limit);
             return {
@@ -155,6 +176,33 @@ function createMcpServer(): McpServer {
             return {
                 isError: true,
                 content: [{ type: 'text', text: `✗ Failed to preview table: ${error}` }]
+            };
+        }
+    });
+
+    // @ts-ignore - MCP SDK type inference issue
+    server.tool('query_table', 'Execute arbitrary SQL query on Iceberg tables. Supports SELECT, aggregations, JOINs, etc.', {
+        sql: z.string().describe(`SQL query to execute. Table format: iceberg_catalog.default.<table_name>
+
+Examples:
+- SELECT * FROM iceberg_catalog.default.logs WHERE level = 'ERROR'
+- SELECT COUNT(*) FROM iceberg_catalog.default.sales GROUP BY category
+- SELECT a.*, b.name FROM iceberg_catalog.default.orders a JOIN iceberg_catalog.default.customers b ON a.customer_id = b.id`),
+        limit: z.number().optional().default(100).describe('Maximum rows to return (1-10000, default: 100)')
+    }, async (args: { sql: string; limit: number }) => {
+        const { sql, limit } = args;
+        try {
+            const result = await icebergQuery.executeQuery(sql, limit);
+            return {
+                content: [{
+                    type: 'text',
+                    text: `Query: ${result.query}\n\nSchema:\n${result.schema.map(col => `  ${col.name}: ${col.type}`).join('\n')}\n\nResults (${result.rowCount} rows):\n${JSON.stringify(result.rows, null, 2)}`
+                }]
+            };
+        } catch (error) {
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `✗ Failed to execute query: ${error}` }]
             };
         }
     });
@@ -224,10 +272,10 @@ async function startServer() {
     const config = getConfig();
     console.log(`${LOG_TAGS.CONFIG} Python path: ${config.spark.pythonPath}`);
     console.log(`${LOG_TAGS.CONFIG} Java home: ${(config.spark as any).javaHome || 'Not set'}`);
-    
+
     pipeManager.initDatabase();
     await initStorage();
-    
+
     app.listen(PORT, () => {
         console.log(`${LOG_TAGS.SERVER} Data Chef Server running on http://localhost:${PORT}`);
         console.log(`${LOG_TAGS.SERVER} REST API: http://localhost:${PORT}/api`);

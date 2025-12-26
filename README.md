@@ -8,7 +8,8 @@ Data Chef는 로컬 파일 시스템의 데이터를 MinIO 기반의 Iceberg 테
 
 ## 주요 기능
 
-- 📂 **파일 패턴 필터링**: 확장자, prefix, suffix, 정규표현식으로 파일 필터링
+- 📂 **파일 패턴 필터링**: 확장자로 파일 필터링
+- 🔍 **정규표현식 파싱**: 로그 파일 등 비정형 텍스트를 정규표현식으로 필드 추출
 - 📊 **스키마 정의**: 자동 추론 또는 수동 컬럼 타입 지정
 - 🔄 **파이프 재사용**: 한 번 정의한 파이프를 여러 폴더에 적용
 - 🚀 **Spark 처리**: Java Spark를 통한 빠르고 안정적인 데이터 처리
@@ -227,8 +228,8 @@ data-chef/
 |--------|----------|------|------|
 | GET | `/pipes` | 파이프 목록 조회 | - |
 | GET | `/pipes/:id` | 파이프 상세 조회 | - |
-| POST | `/pipes` | 파이프 생성 | `{ name, description, filePattern, recordBoundary, schema, output }` |
-| PUT | `/pipes/:id` | 파이프 수정 | `{ name, description, filePattern, ... }` |
+| POST | `/pipes` | 파이프 생성 | `{ name, description, storagePath, filePattern, recordBoundary, schema, partitioning, output }` |
+| PUT | `/pipes/:id` | 파이프 수정 | `{ name, description, storagePath, filePattern, recordBoundary, schema, partitioning, output }` |
 | DELETE | `/pipes/:id` | 파이프 삭제 | - |
 | POST | `/pipes/:id/duplicate` | 파이프 복제 | - |
 
@@ -271,7 +272,7 @@ Data Chef는 MCP(Model Context Protocol) SSE 서버를 제공합니다. AI 클�
 |------|------|-------------|
 | `list_pipes` | 파이프 목록 조회 | - |
 | `get_pipe` | 특정 파이프 조회 | `pipeId` |
-| `create_pipe` | 파이프 생성 | `name`, `description`, `filePattern`, `recordBoundary`, `schema`, `output` |
+| `create_pipe` | 파이프 생성 | `name`, `storagePath`, `fileExtension`, `recordType`, `tableName` (필수), `delimiter`, `hasHeader`, `regexFields` (선택) |
 | `update_pipe` | 파이프 수정 | `pipeId`, `name`, `filePattern`, `output` 등 |
 | `delete_pipe` | 파이프 삭제 | `pipeId` |
 | `duplicate_pipe` | 파이프 복제 | `pipeId`, `newName` |
@@ -288,33 +289,45 @@ Data Chef는 MCP(Model Context Protocol) SSE 서버를 제공합니다. AI 클�
 
 #### create_pipe
 
-파이프는 다음과 같은 구조로 생성됩니다:
+파이프는 다음과 같은 구조로 생성됩니다.
+
+**MCP Tool 파라미터**:
+- **필수**: `name`, `storagePath`, `fileExtension`, `recordType`, `tableName`
+- **선택**: `description`, `namespace`, `writeMode`
+- **CSV용**: `delimiter`, `hasHeader`
+- **텍스트/로그용**: `regexFields` - 필드별 정규표현식 배열
+  - 각 필드: `{ name: string, pattern: string, group: number }`
+  - 예시: `[{ name: "timestamp", pattern: "^(\\d{4}-\\d{2}-\\d{2})", group: 1 }]`
 
 **파일 패턴 설정 (filePattern)**:
 ```json
 {
-  "extensions": ["json", "csv", "log"],
-  "prefix": "access_",
-  "suffix": "_2024",
-  "includeSubdirectories": true
+  "extension": "json"
 }
 ```
 
 **레코드 형식 (recordBoundary)**:
 ```json
 {
-  "type": "json" | "jsonl" | "delimited" | "text" | "parquet",
+  "type": "json" | "delimited" | "parquet" | "text",
   "delimiter": ",",
   "hasHeader": true,
-  "regexPattern": "(\\d+) (\\w+)",
-  "regexFieldNames": ["id", "name"]
+  "encoding": "UTF-8",
+  "fieldExtraction": {
+    "method": "regex",
+    "fields": [
+      { "name": "timestamp", "pattern": "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})", "group": 1 },
+      { "name": "level", "pattern": "\\s([A-Z]+)\\s", "group": 1 },
+      { "name": "message", "pattern": "\\]\\s(.*)$", "group": 1 }
+    ]
+  }
 }
 ```
 
 **스키마 (schema)** - 선택사항, 미지정 시 자동 추론:
 ```json
 {
-  "autoInfer": true,
+  "inferFromData": true,
   "columns": [
     { "name": "id", "type": "long" },
     { "name": "name", "type": "string" },
@@ -327,43 +340,107 @@ Data Chef는 MCP(Model Context Protocol) SSE 서버를 제공합니다. AI 클�
 ```json
 {
   "tableName": "my_table",
+  "catalog": "iceberg_catalog",
   "namespace": "default",
-  "writeMode": "overwrite" | "append",
-  "partitioning": {
-    "enabled": true,
-    "columns": ["year", "month"]
-  }
+  "writeMode": "overwrite" | "append"
 }
 ```
 
-**전체 예시**:
+**CSV 파일 예시**:
 ```json
 {
-  "name": "Apache 로그 파이프",
-  "description": "Apache 로그를 파싱하여 Iceberg 테이블로 변환",
+  "name": "CSV 데이터 파이프",
+  "description": "CSV 파일을 Iceberg 테이블로 변환",
+  "storagePath": "/path/to/data",
   "filePattern": {
-    "extensions": ["log"],
-    "prefix": "access_"
+    "extension": "csv"
   },
   "recordBoundary": {
-    "type": "text",
-    "regexPattern": "(\\d{4}-\\d{2}-\\d{2}) \\[(\\w+)\\] (.*)",
-    "regexFieldNames": ["date", "level", "message"]
+    "type": "delimited",
+    "delimiter": ",",
+    "hasHeader": true,
+    "encoding": "UTF-8"
   },
   "schema": {
-    "autoInfer": false,
-    "columns": [
-      { "name": "date", "type": "string" },
-      { "name": "level", "type": "string" },
-      { "name": "message", "type": "string" }
-    ]
+    "inferFromData": true,
+    "columns": []
+  },
+  "partitioning": {
+    "enabled": false,
+    "keys": []
   },
   "output": {
-    "tableName": "apache_logs",
+    "tableName": "csv_data",
+    "catalog": "iceberg_catalog",
     "namespace": "default",
     "writeMode": "overwrite"
   }
 }
+```
+
+**로그 파싱 예시 (정규표현식 사용)**:
+```json
+{
+  "name": "Apache 로그 파이프",
+  "description": "Apache 로그를 정규표현식으로 파싱하여 Iceberg 테이블로 변환",
+  "storagePath": "/path/to/logs",
+  "filePattern": {
+    "extension": "log"
+  },
+  "recordBoundary": {
+    "type": "text",
+    "encoding": "UTF-8",
+    "fieldExtraction": {
+      "method": "regex",
+      "fields": [
+        { "name": "timestamp", "pattern": "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})", "group": 1 },
+        { "name": "level", "pattern": "\\[(\\w+)\\]", "group": 1 },
+        { "name": "source", "pattern": "\\]\\s+(\\S+)", "group": 1 },
+        { "name": "message", "pattern": "-\\s+(.*)$", "group": 1 }
+      ]
+    }
+  },
+  "schema": {
+    "inferFromData": false,
+    "columns": [
+      { "name": "timestamp", "type": "string", "nullable": false },
+      { "name": "level", "type": "string", "nullable": false },
+      { "name": "source", "type": "string", "nullable": false },
+      { "name": "message", "type": "string", "nullable": true }
+    ]
+  },
+  "partitioning": {
+    "enabled": false,
+    "keys": []
+  },
+  "output": {
+    "tableName": "apache_logs",
+    "catalog": "iceberg_catalog",
+    "namespace": "default",
+    "writeMode": "append"
+  }
+}
+```
+
+**MCP를 통한 로그 파싱 파이프 생성 예시**:
+```
+Claude에게 요청: "Apache 로그 파일들을 파싱하는 파이프를 만들어줘. 
+파일은 /logs/apache 폴더에 있고, .log 파일이야.
+로그 형식은: 2024-01-15 10:30:45 [INFO] server.py - Request completed
+이걸 timestamp, level, source, message 필드로 분리해서 apache_logs 테이블에 저장해줘."
+
+→ Claude가 create_pipe tool을 사용하여:
+- name: "Apache 로그 파이프"
+- storagePath: "/logs/apache"
+- fileExtension: "log"
+- recordType: "text"
+- regexFields: [
+    { name: "timestamp", pattern: "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})", group: 1 },
+    { name: "level", pattern: "\\[(\\w+)\\]", group: 1 },
+    { name: "source", pattern: "\\]\\s+(\\S+)", group: 1 },
+    { name: "message", pattern: "-\\s+(.*)$", group: 1 }
+  ]
+- tableName: "apache_logs"
 ```
 
 #### update_pipe
@@ -431,13 +508,12 @@ npx @modelcontextprotocol/inspector http://localhost:3001/mcp
 
 ## 지원 파일 형식
 
-| 형식 | 확장자 | Reader 클래스 |
-|------|--------|--------------|
-| JSON | `.json` | `JsonReader` |
-| JSON Lines | `.jsonl`, `.ndjson` | `JsonReader` |
-| CSV/TSV | `.csv`, `.tsv` | `CsvReader` |
-| Parquet | `.parquet` | `ParquetReader` |
-| Text/Log | `.log`, `.txt` | 정규표현식 파싱 |
+| 형식 | 타입 | 처리 방식 |
+|------|------|----------|
+| JSON | `json` | `JsonReader` |
+| CSV/Delimited | `delimited` | `CsvReader` |
+| Parquet | `parquet` | `ParquetReader` |
+| Text/Log | `text` | 정규표현식 기반 필드 추출 (fieldExtraction) |
 
 ## 문제 해결
 
@@ -525,19 +601,3 @@ Java Spark 로그는 파이프 실행 시 콘솔에 출력됩니다.
 - **처리 속도**: Java Spark 기반으로 대용량 데이터 고속 처리
 - **메모리**: 파일 스트리밍 방식으로 메모리 효율적 처리
 - **확장성**: Spark 클러스터 모드로 확장 가능
-
-**벤치마크 예시**:
-- 1GB JSON 파일 (100만 레코드): 약 10초
-- 10GB CSV 파일 (1000만 레코드): 약 2분
-
-## 라이선스
-
-MIT
-
-## 기여
-
-Pull Request와 Issue는 환영합니다!
-
-## 연락처
-
-문의사항이 있으시면 GitHub Issue를 열어주세요.
